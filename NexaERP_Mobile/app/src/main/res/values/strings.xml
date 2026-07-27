@@ -1,3 +1,28 @@
 <resources>
     <string name="app_name">NexaERP Mobile</string>
+    <string name="login_logo_content_description">NexaERP logo</string>
+    <string name="login_title">NexaERP</string>
+    <string name="login_subtitle">Enterprise Finance Suite</string>
+    <string name="login_email">Email</string>
+    <string name="login_password">Password</string>
+    <string name="login_remember_me">Remember Me</string>
+    <string name="login_forgot_password">Forgot Password?</string>
+    <string name="login_sign_in">Sign In</string>
+    <string name="login_version">Version 1.0</string>
+    <string name="login_email_required">Email is required</string>
+    <string name="login_password_required">Password is required</string>
+    <string name="login_signing_in">Signing In...</string>
+    <string name="login_successful">Login successful</string>
+    <string name="login_http_error">HTTP %1$d</string>
+    <string name="login_unexpected_response">Unexpected server response</string>
+    <string name="login_network_error">Network request failed</string>
+    <string name="login_session_save_failed">Unable to save the login session</string>
+    <string name="dashboard_title">NexaERP</string>
+    <string name="dashboard_welcome_back">Welcome back</string>
+    <string name="dashboard_development_status">Dashboard development in progress</string>
+    <string name="dashboard_logout">Logout</string>
+    <string name="dashboard_loading_user">Loading current user</string>
+    <string name="dashboard_retry">Retry</string>
+    <string name="splash_restoring_session">Restoring your session</string>
+    <string name="splash_go_to_login">Go to Login</string>
 </resources>
