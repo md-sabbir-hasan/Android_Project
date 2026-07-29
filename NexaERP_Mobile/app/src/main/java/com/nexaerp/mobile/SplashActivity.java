@@ -26,6 +26,7 @@ public class SplashActivity extends AppCompatActivity {
     private TokenManager tokenManager;
     private ApiService apiService;
     private boolean refreshAttempted;
+    private Call<?> activeCall;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,9 +71,10 @@ public class SplashActivity extends AppCompatActivity {
         }
 
         refreshAttempted = true;
-        RefreshClient.getApiService()
-                .refreshToken(new RefreshTokenRequest(refreshToken))
-                .enqueue(new Callback<ApiResponse<LoginResponse>>() {
+        Call<ApiResponse<LoginResponse>> refreshCall = RefreshClient.getApiService()
+                .refreshToken(new RefreshTokenRequest(refreshToken));
+        activeCall = refreshCall;
+        refreshCall.enqueue(new Callback<ApiResponse<LoginResponse>>() {
                     @Override
                     public void onResponse(
                             Call<ApiResponse<LoginResponse>> call,
@@ -118,7 +120,9 @@ public class SplashActivity extends AppCompatActivity {
     }
 
     private void verifyCurrentUser() {
-        apiService.getCurrentUser().enqueue(new Callback<ApiResponse<CurrentUserResponse>>() {
+        Call<ApiResponse<CurrentUserResponse>> currentUserCall = apiService.getCurrentUser();
+        activeCall = currentUserCall;
+        currentUserCall.enqueue(new Callback<ApiResponse<CurrentUserResponse>>() {
             @Override
             public void onResponse(
                     Call<ApiResponse<CurrentUserResponse>> call,
@@ -159,6 +163,14 @@ public class SplashActivity extends AppCompatActivity {
                 showError(messageOrFallback(throwable));
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (activeCall != null) {
+            activeCall.cancel();
+        }
+        super.onDestroy();
     }
 
     private void showLoading() {

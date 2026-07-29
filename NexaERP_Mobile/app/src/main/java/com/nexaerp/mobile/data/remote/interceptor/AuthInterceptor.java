@@ -19,6 +19,10 @@ public class AuthInterceptor implements Interceptor {
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
+        if (isPublicAuthEndpoint(request)) {
+            return chain.proceed(request);
+        }
+
         String accessToken = tokenManager.getAccessToken();
 
         if (accessToken == null || accessToken.trim().isEmpty()) {
@@ -29,5 +33,10 @@ public class AuthInterceptor implements Interceptor {
                 .header("Authorization", "Bearer " + accessToken.trim())
                 .build();
         return chain.proceed(authenticatedRequest);
+    }
+
+    private boolean isPublicAuthEndpoint(Request request) {
+        String path = request.url().encodedPath();
+        return "/api/auth/login".equals(path) || "/api/auth/refresh".equals(path);
     }
 }

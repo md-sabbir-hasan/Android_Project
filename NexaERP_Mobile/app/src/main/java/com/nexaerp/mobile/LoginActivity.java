@@ -23,6 +23,7 @@ public class LoginActivity extends AppCompatActivity {
     private ActivityLoginBinding binding;
     private ApiService apiService;
     private TokenManager tokenManager;
+    private Call<ApiResponse<LoginResponse>> loginCall;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,7 +64,8 @@ public class LoginActivity extends AppCompatActivity {
         }
 
         setLoading(true);
-        apiService.login(new LoginRequest(email, password)).enqueue(
+        loginCall = apiService.login(new LoginRequest(email, password));
+        loginCall.enqueue(
                 new Callback<ApiResponse<LoginResponse>>() {
                     @Override
                     public void onResponse(
@@ -129,6 +131,14 @@ public class LoginActivity extends AppCompatActivity {
                     }
                 }
         );
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (loginCall != null) {
+            loginCall.cancel();
+        }
+        super.onDestroy();
     }
 
     private void setLoading(boolean isLoading) {

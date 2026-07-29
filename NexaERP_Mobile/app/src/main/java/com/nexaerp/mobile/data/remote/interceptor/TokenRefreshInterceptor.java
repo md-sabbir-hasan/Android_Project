@@ -24,7 +24,8 @@ public class TokenRefreshInterceptor implements Interceptor {
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
-        if (request.tag(TokenAuthenticator.RetryMarker.class) != null) {
+        if (request.tag(TokenAuthenticator.RetryMarker.class) != null
+                || isPublicAuthEndpoint(request)) {
             return chain.proceed(request);
         }
 
@@ -33,27 +34,7 @@ public class TokenRefreshInterceptor implements Interceptor {
             request = withCurrentToken(request);
         }
 
-        Response response = chain.proceed(request);
-        if (response.code() != 403 || !tokenManager.isAccessTokenExpired()) {
-            return response;
-        }
-
-        String failedToken = bearerToken(request);
-        if (!tokenAuthenticator.refreshAfterAuthenticationFailure(failedToken)) {
-            return response;
-        }
-
-        String newAccessToken = tokenManager.getAccessToken();
-        if (isBlank(newAccessToken)) {
-            return response;
-        }
-
-        response.close();
-        Request retry = request.newBuilder()
-                .header("Authorization", "Bearer " + newAccessToken.trim())
-                .tag(TokenAuthenticator.RetryMarker.class, new TokenAuthenticator.RetryMarker())
-                .build();
-        return chain.proceed(retry);
+        return chain.proceed(request);
     }
 
     private Request withCurrentToken(Request request) {
@@ -67,11 +48,9 @@ public class TokenRefreshInterceptor implements Interceptor {
         return builder.build();
     }
 
-    private String bearerToken(Request request) {
-        String authorization = request.header("Authorization");
-        return authorization != null && authorization.startsWith("Bearer ")
-                ? authorization.substring(7)
-                : null;
+    private boolean isPublicAuthEndpoint(Request request) {
+        String path = request.url().encodedPath();
+        return "/api/auth/login".equals(path) || "/api/auth/refresh".equals(path);
     }
 
     private boolean isBlank(String value) {

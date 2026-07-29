@@ -31,7 +31,9 @@ public class TokenAuthenticator implements Authenticator {
 
     @Override
     public Request authenticate(Route route, Response response) {
-        if (response.code() != 401 || responseCount(response) >= 2) {
+        if (response.code() != 401
+                || responseCount(response) >= 2
+                || isPublicAuthEndpoint(response.request())) {
             return null;
         }
 
@@ -52,55 +54,61 @@ public class TokenAuthenticator implements Authenticator {
     }
 
     public boolean refreshIfNeeded() {
-        if (!tokenManager.isAccessTokenExpiringSoon()) {
-            return true;
+        synchronized (refreshLock) {
+            if (!tokenManager.isAccessTokenExpiringSoon()) {
+                return true;
+            }
+            return refreshLocked(tokenManager.getAccessToken());
         }
-        return refreshAfterAuthenticationFailure(tokenManager.getAccessToken());
     }
 
     public boolean refreshAfterAuthenticationFailure(String failedToken) {
         synchronized (refreshLock) {
-            String currentToken = tokenManager.getAccessToken();
-            if (!isBlank(currentToken)
-                    && !currentToken.equals(failedToken)
-                    && !tokenManager.isAccessTokenExpiringSoon()) {
-                return true;
-            }
+            return refreshLocked(failedToken);
+        }
+    }
 
-            String refreshToken = tokenManager.getRefreshToken();
-            if (isBlank(refreshToken)) {
+    private boolean refreshLocked(String failedToken) {
+        String currentToken = tokenManager.getAccessToken();
+        if (!isBlank(currentToken)
+                && !currentToken.equals(failedToken)
+                && !tokenManager.isAccessTokenExpiringSoon()) {
+            return true;
+        }
+
+        String refreshToken = tokenManager.getRefreshToken();
+        if (isBlank(refreshToken)) {
+            expireSession();
+            return false;
+        }
+
+        Call<ApiResponse<LoginResponse>> call = RefreshClient.getApiService()
+                .refreshToken(new RefreshTokenRequest(refreshToken));
+        try {
+            retrofit2.Response<ApiResponse<LoginResponse>> response = call.execute();
+            if (response.isSuccessful()) {
+                ApiResponse<LoginResponse> body = response.body();
+                LoginResponse data = body == null ? null : body.getData();
+                if (body != null
+                        && body.isSuccess()
+                        && data != null
+                        && !isBlank(data.getAccessToken())
+                        && data.getExpiresIn() != null
+                        && data.getExpiresIn() > 0L) {
+                    tokenManager.updateAccessToken(data);
+                    return true;
+                }
                 expireSession();
                 return false;
             }
 
-            Call<ApiResponse<LoginResponse>> call = RefreshClient.getApiService()
-                    .refreshToken(new RefreshTokenRequest(refreshToken));
-            try {
-                retrofit2.Response<ApiResponse<LoginResponse>> response = call.execute();
-                if (response.isSuccessful()) {
-                    ApiResponse<LoginResponse> body = response.body();
-                    LoginResponse data = body == null ? null : body.getData();
-                    if (body != null
-                            && body.isSuccess()
-                            && data != null
-                            && !isBlank(data.getAccessToken())
-                            && data.getExpiresIn() != null
-                            && data.getExpiresIn() > 0L) {
-                        tokenManager.updateAccessToken(data);
-                        return true;
-                    }
-                    expireSession();
-                    return false;
-                }
-
-                int code = response.code();
-                if (code == 400 || code == 401 || code == 403) {
-                    expireSession();
-                }
-                return false;
-            } catch (IOException exception) {
-                return false;
+            int code = response.code();
+            if (code == 400 || code == 401 || code == 403) {
+                expireSession();
             }
+            return false;
+        } catch (IOException exception) {
+            return false;
         }
     }
 
@@ -125,6 +133,11 @@ public class TokenAuthenticator implements Authenticator {
             return null;
         }
         return authorization.substring(7);
+    }
+
+    private boolean isPublicAuthEndpoint(Request request) {
+        String path = request.url().encodedPath();
+        return "/api/auth/login".equals(path) || "/api/auth/refresh".equals(path);
     }
 
     private boolean isBlank(String value) {

@@ -24,6 +24,7 @@ public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
     private TokenManager tokenManager;
     private ApiService apiService;
+    private Call<ApiResponse<CurrentUserResponse>> currentUserCall;
     private final SessionManager.Listener sessionListener = this::handleSessionExpired;
 
     @Override
@@ -54,7 +55,11 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadCurrentUser() {
         showLoading();
-        apiService.getCurrentUser().enqueue(new Callback<ApiResponse<CurrentUserResponse>>() {
+        if (currentUserCall != null) {
+            currentUserCall.cancel();
+        }
+        currentUserCall = apiService.getCurrentUser();
+        currentUserCall.enqueue(new Callback<ApiResponse<CurrentUserResponse>>() {
             @Override
             public void onResponse(
                     Call<ApiResponse<CurrentUserResponse>> call,
@@ -91,6 +96,14 @@ public class MainActivity extends AppCompatActivity {
                         : message);
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (currentUserCall != null) {
+            currentUserCall.cancel();
+        }
+        super.onDestroy();
     }
 
     private void displayVerifiedUser(CurrentUserResponse currentUser) {
