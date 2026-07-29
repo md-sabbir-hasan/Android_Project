@@ -8,7 +8,11 @@ import com.nexaerp.mobile.data.remote.api.ApiService;
 import com.nexaerp.mobile.data.remote.interceptor.AuthInterceptor;
 import com.nexaerp.mobile.data.remote.interceptor.TokenAuthenticator;
 import com.nexaerp.mobile.data.remote.interceptor.TokenRefreshInterceptor;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -27,6 +31,11 @@ public final class RetrofitClient {
     public static ApiService getApiService(Context context) {
         ensureInitialized(context);
         return apiService;
+    }
+
+    public static <T> T createService(Context context, Class<T> serviceClass) {
+        ensureInitialized(context);
+        return retrofit.create(serviceClass);
     }
 
     public static TokenAuthenticator getTokenAuthenticator(Context context) {
@@ -61,10 +70,15 @@ public final class RetrofitClient {
                     .authenticator(tokenAuthenticator)
                     .build();
 
+            Gson gson = new GsonBuilder()
+                    .registerTypeAdapter(LocalDate.class, new LocalDateAdapter())
+                    .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                    .create();
+
             retrofit = new Retrofit.Builder()
                     .baseUrl(BuildConfig.BASE_URL)
                     .client(okHttpClient)
-                    .addConverterFactory(GsonConverterFactory.create())
+                    .addConverterFactory(GsonConverterFactory.create(gson))
                     .build();
             apiService = retrofit.create(ApiService.class);
         }

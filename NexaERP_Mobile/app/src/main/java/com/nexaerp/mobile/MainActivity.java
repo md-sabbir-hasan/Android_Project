@@ -14,6 +14,7 @@ import com.nexaerp.mobile.data.remote.client.RetrofitClient;
 import com.nexaerp.mobile.data.remote.model.ApiResponse;
 import com.nexaerp.mobile.data.remote.model.auth.CurrentUserResponse;
 import com.nexaerp.mobile.databinding.ActivityMainBinding;
+import com.nexaerp.mobile.feature.dashboard.DashboardFragment;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -107,23 +108,37 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void displayVerifiedUser(CurrentUserResponse currentUser) {
-        binding.userName.setText(currentUser.getName() == null ? "" : currentUser.getName());
-        binding.userEmail.setText(currentUser.getEmail() == null ? "" : currentUser.getEmail());
+        if (getSupportFragmentManager().findFragmentByTag("dashboard") == null) {
+            getSupportFragmentManager()
+                    .beginTransaction()
+                    .replace(
+                            R.id.dashboard_container,
+                            DashboardFragment.newInstance(
+                                    currentUser.getName(),
+                                    currentUser.getRoles(),
+                                    currentUser.getPermissions()
+                            ),
+                            "dashboard"
+                    )
+                    .commit();
+        }
     }
 
     private void showLoading() {
+        binding.verificationState.setVisibility(View.VISIBLE);
+        binding.dashboardContainer.setVisibility(View.GONE);
         binding.loadingIndicator.setVisibility(View.VISIBLE);
         binding.retryButton.setVisibility(View.GONE);
-        binding.userName.setText("");
-        binding.userEmail.setText("");
     }
 
     private void showLoaded() {
-        binding.loadingIndicator.setVisibility(View.GONE);
-        binding.retryButton.setVisibility(View.GONE);
+        binding.verificationState.setVisibility(View.GONE);
+        binding.dashboardContainer.setVisibility(View.VISIBLE);
     }
 
     private void showLoadFailure(String message) {
+        binding.verificationState.setVisibility(View.VISIBLE);
+        binding.dashboardContainer.setVisibility(View.GONE);
         binding.loadingIndicator.setVisibility(View.GONE);
         binding.retryButton.setVisibility(View.VISIBLE);
         Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_LONG).show();

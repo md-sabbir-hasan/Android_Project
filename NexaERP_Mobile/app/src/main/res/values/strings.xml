@@ -18,11 +18,41 @@
     <string name="login_network_error">Network request failed</string>
     <string name="login_session_save_failed">Unable to save the login session</string>
     <string name="dashboard_title">NexaERP</string>
-    <string name="dashboard_welcome_back">Welcome back</string>
-    <string name="dashboard_development_status">Dashboard development in progress</string>
     <string name="dashboard_logout">Logout</string>
     <string name="dashboard_loading_user">Loading current user</string>
     <string name="dashboard_retry">Retry</string>
+    <string name="dashboard_loading">Loading dashboard</string>
+    <string name="dashboard_greeting">Welcome, %1$s</string>
+    <string name="dashboard_user">User</string>
+    <string name="dashboard_role_unavailable">Role unavailable</string>
+    <string name="dashboard_last_updated">Last updated %1$s</string>
+    <string name="dashboard_quick_actions">Quick actions</string>
+    <string name="dashboard_financial_overview">Financial overview</string>
+    <string name="dashboard_attention">Attention</string>
+    <string name="dashboard_feature_coming_next">This feature is coming next.</string>
+    <string name="dashboard_cash_position">Cash position</string>
+    <string name="dashboard_receivable">Receivable</string>
+    <string name="dashboard_payable">Payable</string>
+    <string name="dashboard_month_expense">Posted expenses this month</string>
+    <string name="dashboard_cash_not_configured">Cash accounts not configured</string>
+    <string name="dashboard_access_limited">No dashboard information is available for your current access.</string>
+    <string name="dashboard_attention_item">• %1$s</string>
+    <plurals name="dashboard_overdue_invoices">
+        <item quantity="one">%1$d overdue invoice</item>
+        <item quantity="other">%1$d overdue invoices</item>
+    </plurals>
+    <plurals name="dashboard_overdue_bills">
+        <item quantity="one">%1$d overdue vendor bill</item>
+        <item quantity="other">%1$d overdue vendor bills</item>
+    </plurals>
+    <plurals name="dashboard_draft_expenses">
+        <item quantity="one">%1$d draft expense</item>
+        <item quantity="other">%1$d draft expenses</item>
+    </plurals>
+    <plurals name="dashboard_recurring_due">
+        <item quantity="one">%1$d recurring expense due within 7 days</item>
+        <item quantity="other">%1$d recurring expenses due within 7 days</item>
+    </plurals>
     <string name="splash_restoring_session">Restoring your session</string>
     <string name="splash_go_to_login">Go to Login</string>
 </resources>
