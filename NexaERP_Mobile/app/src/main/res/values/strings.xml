@@ -19,6 +19,7 @@
     <string name="login_session_save_failed">Unable to save the login session</string>
     <string name="dashboard_title">NexaERP</string>
     <string name="dashboard_logout">Logout</string>
+    <string name="dashboard_logout_content_description">Log out</string>
     <string name="dashboard_loading_user">Loading current user</string>
     <string name="dashboard_retry">Retry</string>
     <string name="dashboard_loading">Loading dashboard</string>
@@ -36,6 +37,15 @@
     <string name="dashboard_month_expense">Posted expenses this month</string>
     <string name="dashboard_cash_not_configured">Cash accounts not configured</string>
     <string name="dashboard_access_limited">No dashboard information is available for your current access.</string>
+    <string name="dashboard_notification_center_coming_next">Notification Center is coming next.</string>
+    <string name="dashboard_no_unread_notifications">No unread notifications</string>
+    <string name="dashboard_unread_notifications">%1$d unread notifications</string>
+    <string name="dashboard_over_99_unread_notifications">More than 99 unread notifications</string>
+    <string name="dashboard_recent_activity">Recent Activity</string>
+    <string name="dashboard_no_recent_activity">No recent activity</string>
+    <string name="dashboard_activity_reference">Reference %1$d</string>
+    <string name="dashboard_activity_by">By %1$s</string>
+    <string name="dashboard_activity_time_unavailable">Time unavailable</string>
     <string name="dashboard_attention_item">• %1$s</string>
     <plurals name="dashboard_overdue_invoices">
         <item quantity="one">%1$d overdue invoice</item>

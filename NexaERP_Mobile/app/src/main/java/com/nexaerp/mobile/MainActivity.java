@@ -20,12 +20,14 @@ import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity
+        implements DashboardFragment.LogoutCallback {
 
     private ActivityMainBinding binding;
     private TokenManager tokenManager;
     private ApiService apiService;
     private Call<ApiResponse<CurrentUserResponse>> currentUserCall;
+    private boolean logoutInProgress;
     private final SessionManager.Listener sessionListener = this::handleSessionExpired;
 
     @Override
@@ -37,7 +39,6 @@ public class MainActivity extends AppCompatActivity {
         tokenManager = new TokenManager(this);
         apiService = RetrofitClient.getApiService(getApplicationContext());
 
-        binding.logoutButton.setOnClickListener(view -> logout());
         binding.retryButton.setOnClickListener(view -> loadCurrentUser());
         loadCurrentUser();
     }
@@ -66,6 +67,9 @@ public class MainActivity extends AppCompatActivity {
                     Call<ApiResponse<CurrentUserResponse>> call,
                     Response<ApiResponse<CurrentUserResponse>> response
             ) {
+                if (logoutInProgress || call.isCanceled()) {
+                    return;
+                }
                 if (!response.isSuccessful()) {
                     showLoadFailure(getString(R.string.login_http_error, response.code()));
                     return;
@@ -91,6 +95,9 @@ public class MainActivity extends AppCompatActivity {
                     Call<ApiResponse<CurrentUserResponse>> call,
                     Throwable throwable
             ) {
+                if (logoutInProgress || call.isCanceled()) {
+                    return;
+                }
                 String message = throwable.getMessage();
                 showLoadFailure(message == null || message.trim().isEmpty()
                         ? getString(R.string.login_network_error)
@@ -144,7 +151,18 @@ public class MainActivity extends AppCompatActivity {
         Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_LONG).show();
     }
 
-    private void logout() {
+    @Override
+    public void onLogoutRequested() {
+        if (logoutInProgress) {
+            return;
+        }
+        logoutInProgress = true;
+
+        if (currentUserCall != null) {
+            currentUserCall.cancel();
+            currentUserCall = null;
+        }
+
         String accessToken = tokenManager.getAccessToken();
         if (accessToken != null && !accessToken.trim().isEmpty()) {
             apiService.logout("Bearer " + accessToken.trim()).enqueue(
@@ -170,6 +188,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleSessionExpired() {
+        if (logoutInProgress) {
+            return;
+        }
+        logoutInProgress = true;
+        if (currentUserCall != null) {
+            currentUserCall.cancel();
+            currentUserCall = null;
+        }
         tokenManager.clearSession();
         openLoginAndClearTask();
     }

@@ -6,7 +6,8 @@ import java.util.Currency;
 import java.util.Locale;
 
 public final class MoneyFormatter {
-    private MoneyFormatter() {}
+    private MoneyFormatter() {
+    }
 
     public static String format(BigDecimal amount, String currencyCode) {
         NumberFormat formatter = NumberFormat.getNumberInstance(Locale.getDefault());
