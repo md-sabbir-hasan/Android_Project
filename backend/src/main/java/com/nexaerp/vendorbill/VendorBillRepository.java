@@ -6,6 +6,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -14,6 +16,9 @@ import java.util.Optional;
 
 @Repository
 public interface VendorBillRepository extends JpaRepository<VendorBill, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from VendorBill b where b.id = :id")
+    Optional<VendorBill> findByIdForUpdate(@Param("id") Long id);
     Optional<VendorBill> findTopByOrderByIdDesc();
     List<VendorBill> findByPartyId(Long partyId);
     List<VendorBill> findByStatus(VendorBillStatus status);
@@ -32,12 +37,12 @@ public interface VendorBillRepository extends JpaRepository<VendorBill, Long> {
 
     @Query("SELECT COUNT(b) FROM VendorBill b " +
             "WHERE b.status IN (com.nexaerp.vendorbill.VendorBillStatus.POSTED, com.nexaerp.vendorbill.VendorBillStatus.PARTIAL) " +
-            "AND b.dueDate < :asOfDate")
+            "AND b.dueDate < :asOfDate AND b.dueAmount > 0")
     long countOverdue(@Param("asOfDate") LocalDate asOfDate);
 
     @Query("SELECT COALESCE(SUM(b.dueAmount), 0) FROM VendorBill b " +
             "WHERE b.status IN (com.nexaerp.vendorbill.VendorBillStatus.POSTED, com.nexaerp.vendorbill.VendorBillStatus.PARTIAL) " +
-            "AND b.dueDate < :asOfDate")
+            "AND b.dueDate < :asOfDate AND b.dueAmount > 0")
     BigDecimal sumOverdueAmount(@Param("asOfDate") LocalDate asOfDate);
 
     @Query("SELECT COALESCE(SUM(b.grandTotal), 0) FROM VendorBill b " +
@@ -47,5 +52,12 @@ public interface VendorBillRepository extends JpaRepository<VendorBill, Long> {
     BigDecimal sumGrandTotalBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
     List<VendorBill> findByStatusAndBillDateLessThanEqual(VendorBillStatus status, LocalDate date);
+
+    Page<VendorBill> findByStatusInAndDueDateBeforeAndDueAmountGreaterThan(
+            List<VendorBillStatus> statuses,
+            LocalDate dueDate,
+            BigDecimal dueAmount,
+            Pageable pageable
+    );
 
 }

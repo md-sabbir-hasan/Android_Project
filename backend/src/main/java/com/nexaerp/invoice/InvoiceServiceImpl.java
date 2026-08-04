@@ -3,6 +3,8 @@ package com.nexaerp.invoice;
 import com.nexaerp.account.Account;
 import com.nexaerp.account.AccountRepository;
 import com.nexaerp.accountingperiod.AccountingPeriodService;
+import com.nexaerp.approval.ApprovalRequest;
+import com.nexaerp.approval.ApprovalService;
 import com.nexaerp.audit.AuditAction;
 import com.nexaerp.audit.AuditLogService;
 import com.nexaerp.common.exception.BusinessRuleException;
@@ -13,7 +15,13 @@ import com.nexaerp.invoice.dto.InvoiceItemRequestDto;
 import com.nexaerp.invoice.dto.InvoiceItemResponseDto;
 import com.nexaerp.invoice.dto.InvoiceRequestDto;
 import com.nexaerp.invoice.dto.InvoiceResponseDto;
+import com.nexaerp.fileupload.FileUploadService;
+import com.nexaerp.fileupload.dto.FileUploadResponseDto;
 import com.nexaerp.journal.*;
+import com.nexaerp.notification.NotificationModule;
+import com.nexaerp.notification.NotificationPriority;
+import com.nexaerp.notification.NotificationService;
+import com.nexaerp.notification.NotificationType;
 import com.nexaerp.party.Party;
 import com.nexaerp.party.PartyRepository;
 import com.nexaerp.security.CurrentUserService;
@@ -23,6 +31,7 @@ import com.nexaerp.settings.SystemSettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -30,6 +39,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -48,8 +58,9 @@ public class InvoiceServiceImpl implements InvoiceService{
     private final AccountingPeriodService accountingPeriodService;
     private final MakerCheckerService makerCheckerService;
     private final CurrentUserService currentUserService;
-    private final ExchangeRateService exchangeRateService;
-    private final CurrencyService currencyService;
+    private final NotificationService notificationService;
+    private final ApprovalService approvalService;
+    private final FileUploadService fileUploadService;
 
     @Override
     @Transactional
@@ -121,11 +132,11 @@ public class InvoiceServiceImpl implements InvoiceService{
     @Override
     @Transactional
     public InvoiceResponseDto update(Long id, InvoiceRequestDto request) {
-
-        Invoice invoice = invoiceRepository.findById(id)
+        Invoice invoice = invoiceRepository.findByIdForUpdate(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Invoice not found")
                 );
+        approvalService.assertInvoiceChangeAllowed(id);
 
         if (!InvoiceStatus.DRAFT.equals(invoice.getStatus())) {
             throw new BusinessRuleException(
@@ -199,7 +210,7 @@ public class InvoiceServiceImpl implements InvoiceService{
     public InvoiceResponseDto getById(Long id) {
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
-        return toResponse(invoice);
+        return toResponse(invoice, true);
     }
 
     @Override
@@ -229,6 +240,7 @@ public class InvoiceServiceImpl implements InvoiceService{
     @Override
     @Transactional
     public InvoiceResponseDto post(Long id) {
+        ApprovalRequest approvalRequest = approvalService.lockAndValidateInvoiceForPosting(id);
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
 
@@ -285,13 +297,27 @@ public class InvoiceServiceImpl implements InvoiceService{
                 "POSTED"
         );
 
+        notificationService.scheduleUniqueForUsersAfterCommit(
+                Arrays.asList(saved.getCreatedBy(), saved.getPostedBy()),
+                NotificationType.INVOICE_POSTED,
+                NotificationPriority.MEDIUM,
+                NotificationModule.INVOICE,
+                "Invoice posted",
+                "Invoice " + saved.getInvoiceNumber() + " was posted successfully.",
+                "/invoice/" + saved.getId(),
+                "INVOICE",
+                saved.getId()
+        );
+
+        approvalService.consumeAfterSuccessfulPost(approvalRequest);
+
         return toResponse(saved);
     }
 
     @Override
     @Transactional
     public InvoiceResponseDto cancel(Long id, CancelledReason reason) {
-
+        ApprovalRequest approvalRequest = approvalService.lockActiveInvoiceForCancellation(id);
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Invoice not found")
@@ -342,7 +368,38 @@ public class InvoiceServiceImpl implements InvoiceService{
                 InvoiceStatus.CANCELLED.name()
         );
 
+        Long actorUserId = currentUserService.getCurrentUserId();
+        notificationService.scheduleUniqueForUsersAfterCommit(
+                Arrays.asList(saved.getCreatedBy(), actorUserId),
+                NotificationType.INVOICE_CANCELLED,
+                NotificationPriority.HIGH,
+                NotificationModule.INVOICE,
+                "Invoice cancelled",
+                "Invoice " + saved.getInvoiceNumber() + " was cancelled.",
+                "/invoice/" + saved.getId(),
+                "INVOICE",
+                saved.getId()
+        );
+
+        approvalService.cancelAfterSuccessfulDocumentCancellation(approvalRequest);
+
         return toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public FileUploadResponseDto uploadAttachment(Long id, MultipartFile file) {
+        Invoice invoice = invoiceRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        approvalService.assertInvoiceChangeAllowed(id);
+        if (invoice.getStatus() != InvoiceStatus.DRAFT) {
+            throw new BusinessRuleException("Only DRAFT invoices can be updated");
+        }
+        FileUploadResponseDto response = fileUploadService.upload(file, "INVOICE", id);
+        invoice.setAttachmentUrl(response.getFileUrl());
+        invoiceRepository.save(invoice);
+        auditLogService.log(AuditAction.UPLOADED, "INVOICE", id, null, response.getOriginalName());
+        return response;
     }
 
 
@@ -510,66 +567,64 @@ public class InvoiceServiceImpl implements InvoiceService{
 
         LocalDate reversalDate = LocalDate.now();
 
-        journalEntryRepository
+        JournalEntry original = journalEntryRepository
                 .findBySourceTypeAndSourceId(
                         JournalSourceType.INVOICE,
                         invoice.getId()
                 )
-                .ifPresent(original -> {
+                .orElseThrow(() -> new BusinessRuleException(
+                        "Original journal entry not found for posted invoice"
+                ));
 
-                    if (original.getStatus() == JournalStatus.REVERSED) {
-                        throw new BusinessRuleException(
-                                "Journal entry is already reversed"
-                        );
-                    }
+        if (original.getStatus() == JournalStatus.REVERSED) {
+            throw new BusinessRuleException(
+                    "Journal entry is already reversed"
+            );
+        }
 
-                    JournalEntry reversal = new JournalEntry();
-                    reversal.setEntryNumber(generateJournalNumber());
-                    reversal.setDate(reversalDate);
-                    reversal.setDescription(
-                            "Reversal - " + invoice.getInvoiceNumber()
-                    );
-                    reversal.setType(JournalEntryType.SALES);
-                    reversal.setStatus(JournalStatus.POSTED);
-                    reversal.setSourceType(JournalSourceType.INVOICE);
-                    reversal.setSourceId(invoice.getId());
-                    reversal.setTotalAmount(original.getTotalAmount());
-                    reversal.setReversedFromId(original.getId());
-                    reversal.setReferenceNumber(
-                            "REV-" + original.getReferenceNumber()
-                    );
+        JournalEntry reversal = new JournalEntry();
+        reversal.setEntryNumber(generateJournalNumber());
+        reversal.setDate(reversalDate);
+        reversal.setDescription(
+                "Reversal - " + invoice.getInvoiceNumber()
+        );
+        reversal.setType(JournalEntryType.SALES);
+        reversal.setStatus(JournalStatus.POSTED);
+        reversal.setSourceType(JournalSourceType.INVOICE);
+        reversal.setSourceId(invoice.getId());
+        reversal.setTotalAmount(original.getTotalAmount());
+        reversal.setReversedFromId(original.getId());
+        reversal.setReferenceNumber(
+                "REV-" + original.getReferenceNumber()
+        );
 
-                    JournalEntry savedReversal =
-                            journalEntryRepository.save(reversal);
+        JournalEntry savedReversal = journalEntryRepository.save(reversal);
 
-                    List<JournalLine> originalLines =
-                            journalLineRepository
-                                    .findByJournalEntryId(original.getId());
+        List<JournalLine> originalLines =
+                journalLineRepository.findByJournalEntryId(original.getId());
 
-                    originalLines.forEach(line -> {
-                        JournalLine reversalLine =
-                                new JournalLine();
+        originalLines.forEach(line -> {
+            JournalLine reversalLine = new JournalLine();
 
-                        reversalLine.setJournalEntry(savedReversal);
-                        reversalLine.setAccount(line.getAccount());
-                        reversalLine.setDebit(line.getCredit());
-                        reversalLine.setCredit(line.getDebit());
-                        reversalLine.setDescription(
-                                "Reversal: " + line.getDescription()
-                        );
+            reversalLine.setJournalEntry(savedReversal);
+            reversalLine.setAccount(line.getAccount());
+            reversalLine.setDebit(line.getCredit());
+            reversalLine.setCredit(line.getDebit());
+            reversalLine.setDescription(
+                    "Reversal: " + line.getDescription()
+            );
 
-                        journalLineRepository.save(reversalLine);
+            journalLineRepository.save(reversalLine);
 
-                        updateBalance(
-                                line.getAccount(),
-                                line.getCredit(),
-                                line.getDebit()
-                        );
-                    });
+            updateBalance(
+                    line.getAccount(),
+                    line.getCredit(),
+                    line.getDebit()
+            );
+        });
 
-                    original.setStatus(JournalStatus.REVERSED);
-                    journalEntryRepository.save(original);
-                });
+        original.setStatus(JournalStatus.REVERSED);
+        journalEntryRepository.save(original);
     }
 
 
@@ -641,7 +696,14 @@ public class InvoiceServiceImpl implements InvoiceService{
                                                     //---Mapper---
 
     private InvoiceResponseDto toResponse(Invoice invoice) {
+        return toResponse(invoice, false);
+    }
+
+    private InvoiceResponseDto toResponse(Invoice invoice, boolean includeApproval) {
         List<InvoiceItem> items = invoiceItemRepository.findByInvoiceId(invoice.getId());
+        ApprovalRequest latestApproval = includeApproval
+                ? approvalService.findLatestInvoiceRequest(invoice.getId())
+                : null;
 
         return InvoiceResponseDto.builder()
                 .id(invoice.getId())
@@ -668,6 +730,12 @@ public class InvoiceServiceImpl implements InvoiceService{
                 .postedAt(invoice.getPostedAt())
                 .createdAt(invoice.getCreatedAt())
                 .updatedAt(invoice.getUpdatedAt())
+                .createdBy(invoice.getCreatedBy())
+                .approvalFeatureEnabled(approvalService.isInvoiceApprovalEnabled())
+                .latestApprovalId(latestApproval != null ? latestApproval.getId() : null)
+                .activeApprovalId(latestApproval != null && latestApproval.getActiveMarker() != null ? latestApproval.getId() : null)
+                .approvalStatus(latestApproval != null ? latestApproval.getStatus() : null)
+                .approvalConsumed(latestApproval != null ? latestApproval.getConsumedAt() != null : null)
                 .items(items.stream().map(this::toItemResponse).collect(Collectors.toList()))
                 .build();
     }

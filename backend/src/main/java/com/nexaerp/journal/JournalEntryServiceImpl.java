@@ -1,5 +1,7 @@
 package com.nexaerp.journal;
 
+import com.nexaerp.approval.ApprovalRequest;
+import com.nexaerp.approval.ApprovalService;
 import com.nexaerp.account.Account;
 import com.nexaerp.account.AccountRepository;
 import com.nexaerp.account.AccountType;
@@ -22,6 +24,8 @@ import com.nexaerp.journal.dto.JournalLineRequestDto;
 import com.nexaerp.journal.dto.JournalLineResponseDto;
 import com.nexaerp.security.MakerCheckerService;
 import com.nexaerp.notification.NotificationService;
+import com.nexaerp.notification.NotificationModule;
+import com.nexaerp.notification.NotificationPriority;
 import com.nexaerp.notification.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +55,7 @@ public class JournalEntryServiceImpl implements JournalEntryService{
     private final NotificationService notificationService;
     private final BudgetAlertEmailService budgetAlertEmailService;
     private final CostCenterService costCenterService;
+    private final ApprovalService approvalService;
 
 
     @Override
@@ -91,6 +96,17 @@ public class JournalEntryServiceImpl implements JournalEntryService{
                 saved.getEntryNumber()
         );
 
+        notificationService.scheduleUniqueForCurrentUserAfterCommit(
+                NotificationType.JOURNAL_DRAFT_PENDING,
+                NotificationPriority.MEDIUM,
+                NotificationModule.JOURNAL,
+                "Journal draft created",
+                "Journal " + saved.getEntryNumber() + " was created as a draft.",
+                "/journals/" + saved.getId() + "/edit",
+                "JOURNAL",
+                saved.getId()
+        );
+
         return toResponse(saved);
     }
 
@@ -102,6 +118,10 @@ public class JournalEntryServiceImpl implements JournalEntryService{
 
         if (!entry.getStatus().equals(JournalStatus.DRAFT)) {
             throw new BusinessRuleException("Only DRAFT entries can be updated");
+        }
+
+        if (entry.getSourceType() == JournalSourceType.MANUAL) {
+            approvalService.assertJournalChangeAllowed(id);
         }
 
         validateLines(request.getLines());
@@ -170,6 +190,10 @@ public class JournalEntryServiceImpl implements JournalEntryService{
             throw new BusinessRuleException("Only DRAFT entries can be posted");
         }
 
+        ApprovalRequest approvalRequest = entry.getSourceType() == JournalSourceType.MANUAL
+                ? approvalService.lockAndValidateForPosting(id)
+                : null;
+
         if (entry.getLines() == null || entry.getLines().isEmpty()) {
             throw new BusinessRuleException("Cannot post a journal entry with zero lines");
         }
@@ -212,6 +236,8 @@ public class JournalEntryServiceImpl implements JournalEntryService{
                 "DRAFT",
                 "POSTED"
         );
+
+        approvalService.consumeAfterSuccessfulPost(approvalRequest);
 
         JournalEntry completed = journalEntryRepository.save(entry);
         List<BudgetWarningDto> budgetWarnings = checkBudgets(completed);
@@ -307,6 +333,10 @@ public class JournalEntryServiceImpl implements JournalEntryService{
             throw new BusinessRuleException("Only DRAFT entries can be deleted");
         }
 
+        if (entry.getSourceType() == JournalSourceType.MANUAL) {
+            approvalService.assertJournalChangeAllowed(id);
+        }
+
         journalEntryRepository.delete(entry);
 
         auditLogService.log(
@@ -356,23 +386,16 @@ public class JournalEntryServiceImpl implements JournalEntryService{
                 warning.getExceededAmount()
         );
 
-        try {
-            notificationService.createForCurrentUser(
-                    NotificationType.BUDGET_EXCEEDED,
-                    "Budget exceeded",
-                    message,
-                    route,
-                    "BUDGET",
-                    warning.getBudgetId()
-            );
-        } catch (RuntimeException exception) {
-            log.warn(
-                    "Journal posting succeeded, but budget notification creation failed for budget {} and account {}",
-                    warning.getBudgetId(),
-                    warning.getAccountId(),
-                    exception
-            );
-        }
+        notificationService.scheduleForCurrentUserAfterCommit(
+                NotificationType.BUDGET_EXCEEDED,
+                NotificationPriority.HIGH,
+                NotificationModule.BUDGET,
+                "Budget exceeded",
+                message,
+                route,
+                "BUDGET",
+                warning.getBudgetId()
+        );
     }
                                 // -- Private Helpers --
 
@@ -483,6 +506,9 @@ public class JournalEntryServiceImpl implements JournalEntryService{
                                      // -- Mappers --
 
     private JournalEntryResponseDto toResponse(JournalEntry entry) {
+        ApprovalRequest activeApproval = entry.getSourceType() == JournalSourceType.MANUAL
+                ? approvalService.findLatestJournalRequest(entry.getId())
+                : null;
         JournalEntryResponseDto dto = JournalEntryResponseDto.builder()
                 .id(entry.getId())
                 .entryNumber(entry.getEntryNumber())
@@ -492,6 +518,11 @@ public class JournalEntryServiceImpl implements JournalEntryService{
                 .status(entry.getStatus())
                 .sourceType(entry.getSourceType())
                 .totalAmount(entry.getTotalAmount())
+                .createdBy(entry.getCreatedBy())
+                .approvalEnabled(entry.getSourceType() == JournalSourceType.MANUAL
+                        && approvalService.isManualJournalApprovalEnabled())
+                .approvalRequestId(activeApproval != null ? activeApproval.getId() : null)
+                .approvalStatus(activeApproval != null ? activeApproval.getStatus() : null)
                 .build();
 
         if (entry.getLines() != null) {

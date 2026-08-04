@@ -3,6 +3,8 @@ package com.nexaerp.vendorbill;
 import com.nexaerp.account.Account;
 import com.nexaerp.account.AccountRepository;
 import com.nexaerp.accountingperiod.AccountingPeriodService;
+import com.nexaerp.approval.ApprovalRequest;
+import com.nexaerp.approval.ApprovalService;
 import com.nexaerp.audit.AuditAction;
 import com.nexaerp.audit.AuditLogService;
 import com.nexaerp.budget.BudgetCheckService;
@@ -14,6 +16,8 @@ import com.nexaerp.costcenter.CostCenterService;
 import com.nexaerp.email.BudgetAlertEmailService;
 import com.nexaerp.journal.*;
 import com.nexaerp.notification.NotificationService;
+import com.nexaerp.notification.NotificationModule;
+import com.nexaerp.notification.NotificationPriority;
 import com.nexaerp.notification.NotificationType;
 import com.nexaerp.party.Party;
 import com.nexaerp.party.PartyRepository;
@@ -36,6 +40,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,6 +68,7 @@ public class VendorBillServiceImpl implements VendorBillService {
     private final NotificationService notificationService;
     private final BudgetAlertEmailService budgetAlertEmailService;
     private final CostCenterService costCenterService;
+    private final ApprovalService approvalService;
 
 
     @Override
@@ -112,6 +118,7 @@ public class VendorBillServiceImpl implements VendorBillService {
     @Override
     @Transactional
     public VendorBillResponseDto update(Long id, VendorBillRequestDto request) {
+        approvalService.assertVendorBillChangeAllowed(id);
         VendorBill bill = vendorBillRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
 
@@ -163,7 +170,7 @@ public class VendorBillServiceImpl implements VendorBillService {
     public VendorBillResponseDto getById(Long id) {
         VendorBill bill = vendorBillRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
-        return toResponse(bill);
+        return toResponse(bill, Collections.emptyList(), true);
     }
 
     @Override
@@ -201,6 +208,12 @@ public class VendorBillServiceImpl implements VendorBillService {
     @Override
     @Transactional
     public VendorBillResponseDto approve(Long id) {
+        if (approvalService.isVendorBillApprovalEnabled()) {
+            approvalService.approveVendorBillCompatibility(id);
+            VendorBill approved = vendorBillRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
+            return toResponse(approved, Collections.emptyList(), true);
+        }
         VendorBill bill = vendorBillRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
 
@@ -262,6 +275,8 @@ public class VendorBillServiceImpl implements VendorBillService {
                     "Only APPROVED bills can be posted"
             );
         }
+
+        ApprovalRequest approvalRequest = approvalService.lockAndValidateVendorBillForPosting(id);
 
         List<VendorBillItem> items =
                 vendorBillItemRepository.findByVendorBillId(
@@ -328,6 +343,18 @@ public class VendorBillServiceImpl implements VendorBillService {
                 VendorBillStatus.POSTED.name()
         );
 
+        notificationService.scheduleUniqueForUsersAfterCommit(
+                Arrays.asList(saved.getCreatedBy(), saved.getPostedBy()),
+                NotificationType.VENDOR_BILL_POSTED,
+                NotificationPriority.MEDIUM,
+                NotificationModule.VENDOR_BILL,
+                "Vendor bill posted",
+                "Vendor bill " + saved.getBillNumber() + " was posted successfully.",
+                "/vendor-bill/" + saved.getId(),
+                "VENDOR_BILL",
+                saved.getId()
+        );
+
         budgetAlertEmailService.scheduleAfterCommit(
                 "Vendor Bill",
                 saved.getId(),
@@ -336,12 +363,14 @@ public class VendorBillServiceImpl implements VendorBillService {
                 budgetWarnings
         );
         notifyBudgetExceeded(budgetWarnings);
+        approvalService.consumeAfterSuccessfulPost(approvalRequest);
         return toResponse(saved, budgetWarnings);
     }
 
     @Override
     @Transactional
     public VendorBillResponseDto cancel(Long id, VendorBillCancelledReason reason) {
+        ApprovalRequest approvalRequest = approvalService.lockActiveVendorBillForCancellation(id);
         VendorBill bill = vendorBillRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
 
@@ -383,6 +412,21 @@ public class VendorBillServiceImpl implements VendorBillService {
                 oldStatus.name(),
                 "CANCELLED"
         );
+
+        Long actorUserId = currentUserService.getCurrentUserId();
+        notificationService.scheduleUniqueForUsersAfterCommit(
+                Arrays.asList(saved.getCreatedBy(), actorUserId),
+                NotificationType.VENDOR_BILL_CANCELLED,
+                NotificationPriority.HIGH,
+                NotificationModule.VENDOR_BILL,
+                "Vendor bill cancelled",
+                "Vendor bill " + saved.getBillNumber() + " was cancelled.",
+                "/vendor-bill/" + saved.getId(),
+                "VENDOR_BILL",
+                saved.getId()
+        );
+
+        approvalService.cancelAfterSuccessfulDocumentCancellation(approvalRequest);
 
         return toResponse(saved);
     }
@@ -584,50 +628,52 @@ public class VendorBillServiceImpl implements VendorBillService {
     private void reverseJournalEntry(VendorBill bill) {
 
         // Find the original journal entry for this vendor bill
-        journalEntryRepository
+        JournalEntry original = journalEntryRepository
                 .findBySourceTypeAndSourceId(JournalSourceType.VENDOR_BILL, bill.getId())
-                .ifPresent(original -> {
-                    if (original.getStatus() == JournalStatus.REVERSED) {
-                        throw new BusinessRuleException("Journal entry is already reversed");
-                    }
+                .orElseThrow(() -> new BusinessRuleException(
+                        "Original journal entry not found for vendor bill"
+                ));
 
-                    // Create a reversal entry
-                    JournalEntry reversal = new JournalEntry();
-                    reversal.setEntryNumber(generateJournalNumber());
-                    reversal.setDate(LocalDate.now());
-                    reversal.setDescription("Reversal - " + bill.getBillNumber());
-                    reversal.setType(JournalEntryType.PURCHASE);
-                    reversal.setStatus(JournalStatus.POSTED);
-                    reversal.setSourceType(JournalSourceType.VENDOR_BILL);
-                    reversal.setSourceId(bill.getId());
-                    reversal.setTotalAmount(original.getTotalAmount());
-                    reversal.setReversedFromId(original.getId());
-                    reversal.setReferenceNumber("REV-" + original.getReferenceNumber());
+        if (original.getStatus() == JournalStatus.REVERSED) {
+            throw new BusinessRuleException("Journal entry is already reversed");
+        }
 
-                    JournalEntry savedReversal = journalEntryRepository.save(reversal);
+        // Create a reversal entry
+        JournalEntry reversal = new JournalEntry();
+        reversal.setEntryNumber(generateJournalNumber());
+        reversal.setDate(LocalDate.now());
+        reversal.setDescription("Reversal - " + bill.getBillNumber());
+        reversal.setType(JournalEntryType.PURCHASE);
+        reversal.setStatus(JournalStatus.POSTED);
+        reversal.setSourceType(JournalSourceType.VENDOR_BILL);
+        reversal.setSourceId(bill.getId());
+        reversal.setTotalAmount(original.getTotalAmount());
+        reversal.setReversedFromId(original.getId());
+        reversal.setReferenceNumber("REV-" + original.getReferenceNumber());
 
-                    // Reverse all lines (swap debit and credit)
-                    List<JournalLine> originalLines =
-                            journalLineRepository.findByJournalEntryId(original.getId());
+        JournalEntry savedReversal = journalEntryRepository.save(reversal);
 
-                    originalLines.forEach(line -> {
-                        JournalLine reversalLine = new JournalLine();
-                        reversalLine.setJournalEntry(savedReversal);
-                        reversalLine.setAccount(line.getAccount());
-                        reversalLine.setCostCenter(line.getCostCenter());
-                        reversalLine.setDebit(line.getCredit());   // swap
-                        reversalLine.setCredit(line.getDebit());   // swap
-                        reversalLine.setDescription("Reversal: " + line.getDescription());
-                        journalLineRepository.save(reversalLine);
+        // Reverse all lines (swap debit and credit)
+        List<JournalLine> originalLines =
+                journalLineRepository.findByJournalEntryId(original.getId());
 
-                        // Update account balance with reversed amounts
-                        updateBalance(line.getAccount(), line.getCredit(), line.getDebit());
-                    });
+        originalLines.forEach(line -> {
+            JournalLine reversalLine = new JournalLine();
+            reversalLine.setJournalEntry(savedReversal);
+            reversalLine.setAccount(line.getAccount());
+            reversalLine.setCostCenter(line.getCostCenter());
+            reversalLine.setDebit(line.getCredit());   // swap
+            reversalLine.setCredit(line.getDebit());   // swap
+            reversalLine.setDescription("Reversal: " + line.getDescription());
+            journalLineRepository.save(reversalLine);
 
-                    // Mark original entry as reversed
-                    original.setStatus(JournalStatus.REVERSED);
-                    journalEntryRepository.save(original);
-                });
+            // Update account balance with reversed amounts
+            updateBalance(line.getAccount(), line.getCredit(), line.getDebit());
+        });
+
+        // Mark original entry as reversed
+        original.setStatus(JournalStatus.REVERSED);
+        journalEntryRepository.save(original);
     }
 
     private void updateBalance(Account account, BigDecimal debit, BigDecimal credit) {
@@ -686,23 +732,16 @@ public class VendorBillServiceImpl implements VendorBillService {
                     warning.getExceededAmount()
             );
 
-            try {
-                notificationService.createForCurrentUser(
-                        NotificationType.BUDGET_EXCEEDED,
-                        "Budget exceeded",
-                        message,
-                        route,
-                        "BUDGET",
-                        warning.getBudgetId()
-                );
-            } catch (RuntimeException exception) {
-                log.warn(
-                        "Vendor bill posting succeeded, but budget notification creation failed for budget {} and account {}",
-                        warning.getBudgetId(),
-                        warning.getAccountId(),
-                        exception
-                );
-            }
+            notificationService.scheduleForCurrentUserAfterCommit(
+                    NotificationType.BUDGET_EXCEEDED,
+                    NotificationPriority.HIGH,
+                    NotificationModule.BUDGET,
+                    "Budget exceeded",
+                    message,
+                    route,
+                    "BUDGET",
+                    warning.getBudgetId()
+            );
         }
     }
 
@@ -780,15 +819,26 @@ private void validateVendorParty(Party party) {
     // ---Mappers----
 
     private VendorBillResponseDto toResponse(VendorBill bill) {
-        return toResponse(bill, Collections.emptyList());
+        return toResponse(bill, Collections.emptyList(), false);
     }
 
     private VendorBillResponseDto toResponse(
             VendorBill bill,
             List<BudgetWarningDto> budgetWarnings
     ) {
+        return toResponse(bill, budgetWarnings, false);
+    }
+
+    private VendorBillResponseDto toResponse(
+            VendorBill bill,
+            List<BudgetWarningDto> budgetWarnings,
+            boolean includeApproval
+    ) {
         List<VendorBillItem> items =
                 vendorBillItemRepository.findByVendorBillId(bill.getId());
+        ApprovalRequest latestApproval = includeApproval
+                ? approvalService.findLatestVendorBillRequest(bill.getId())
+                : null;
 
         return VendorBillResponseDto.builder()
                 .id(bill.getId())
@@ -818,6 +868,11 @@ private void validateVendorParty(Party party) {
                 .dueAmount(bill.getDueAmount())
                 .approvedAt(bill.getApprovedAt())
                 .postedAt(bill.getPostedAt())
+                .createdBy(bill.getCreatedBy())
+                .approvalFeatureEnabled(approvalService.isVendorBillApprovalEnabled())
+                .activeApprovalId(latestApproval != null && latestApproval.getActiveMarker() != null ? latestApproval.getId() : null)
+                .approvalStatus(latestApproval != null ? latestApproval.getStatus() : null)
+                .approvalConsumed(latestApproval != null ? latestApproval.getConsumedAt() != null : null)
                 .createdAt(bill.getCreatedAt())
                 .updatedAt(bill.getUpdatedAt())
                 .items(items.stream()

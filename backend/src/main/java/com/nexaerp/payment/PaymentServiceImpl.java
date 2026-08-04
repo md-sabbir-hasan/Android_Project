@@ -3,6 +3,8 @@ package com.nexaerp.payment;
 import com.nexaerp.account.Account;
 import com.nexaerp.account.AccountRepository;
 import com.nexaerp.accountingperiod.AccountingPeriodService;
+import com.nexaerp.approval.ApprovalRequest;
+import com.nexaerp.approval.ApprovalService;
 import com.nexaerp.audit.AuditAction;
 import com.nexaerp.audit.AuditLogService;
 import com.nexaerp.banking.entity.BankAccount;
@@ -17,6 +19,10 @@ import com.nexaerp.invoice.Invoice;
 import com.nexaerp.invoice.InvoiceRepository;
 import com.nexaerp.invoice.InvoiceStatus;
 import com.nexaerp.journal.*;
+import com.nexaerp.notification.NotificationModule;
+import com.nexaerp.notification.NotificationPriority;
+import com.nexaerp.notification.NotificationService;
+import com.nexaerp.notification.NotificationType;
 import com.nexaerp.party.Party;
 import com.nexaerp.party.PartyRepository;
 import com.nexaerp.party.PartyType;
@@ -36,7 +42,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -59,6 +69,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final BankAccountRepository bankAccountRepository;
     private final BankTransactionRepository bankTransactionRepository;
     private final ExpenseRepository expenseRepository;
+    private final NotificationService notificationService;
+    private final ApprovalService approvalService;
 
 
     @Override
@@ -129,7 +141,7 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponseDto getById(Long id) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
-        return toResponse(payment);
+        return toResponse(payment, true);
     }
 
     @Override
@@ -244,7 +256,7 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public PaymentResponseDto post(Long id) {
-
+        ApprovalRequest approvalRequest = approvalService.lockAndValidatePaymentForPosting(id);
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Payment not found")
@@ -287,18 +299,6 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
-        if (journalEntryRepository
-                .findBySourceTypeAndSourceId(
-                        JournalSourceType.PAYMENT,
-                        payment.getId()
-                )
-                .isPresent()) {
-
-            throw new BusinessRuleException(
-                    "Journal entry already exists for this payment"
-            );
-        }
-
         /*
          * Creator cannot post their own payment.
          */
@@ -314,23 +314,25 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.getPaymentDate()
         );
 
-        validateSufficientPaymentBalance(payment);
+        List<PaymentAllocation> allocations = lockAndValidateAllocations(payment);
+        BankAccount bankAccount = lockAndValidateBank(payment);
+
+        if (journalEntryRepository
+                .findBySourceTypeAndSourceId(JournalSourceType.PAYMENT, payment.getId())
+                .isPresent()) {
+            throw new BusinessRuleException("Journal entry already exists for this payment");
+        }
 
         createJournalEntry(payment);
 
         updateLinkedBankBalance(
-                payment.getAccount(),
+                bankAccount,
                 payment.getAmount(),
                 payment.getPaymentType(),
                 false
         );
 
-        createBankTransactionForPayment(payment);
-
-        List<PaymentAllocation> allocations =
-                paymentAllocationRepository.findByPaymentId(
-                        payment.getId()
-                );
+        createBankTransactionForPayment(payment, bankAccount);
 
         for (PaymentAllocation allocation : allocations) {
             applyAllocationToDocument(allocation);
@@ -352,13 +354,27 @@ public class PaymentServiceImpl implements PaymentService {
                 PaymentStatus.POSTED.name()
         );
 
+        notificationService.scheduleUniqueForUsersAfterCommit(
+                Arrays.asList(saved.getCreatedBy(), saved.getPostedBy()),
+                NotificationType.PAYMENT_POSTED,
+                NotificationPriority.MEDIUM,
+                NotificationModule.PAYMENT,
+                "Payment posted",
+                "Payment " + saved.getPaymentNumber() + " was posted successfully.",
+                "/payment/" + saved.getId(),
+                "PAYMENT",
+                saved.getId()
+        );
+
+        approvalService.consumeAfterSuccessfulPost(approvalRequest);
+
         return toResponse(saved);
     }
 
     @Override
     @Transactional
     public PaymentResponseDto cancel(Long id) {
-
+        ApprovalRequest approvalRequest = approvalService.lockActivePaymentForCancellation(id);
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Payment not found")
@@ -418,6 +434,8 @@ public class PaymentServiceImpl implements PaymentService {
                 PaymentStatus.CANCELLED.name()
         );
 
+        approvalService.cancelAfterSuccessfulDocumentCancellation(approvalRequest);
+
         return toResponse(saved);
     }
 
@@ -441,8 +459,8 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Customer payment to allocate against Invoices
             List<Invoice> dueInvoices = invoiceRepository
-                    .findByPartyIdAndDueAmountGreaterThanAndStatusNotOrderByDueDateAsc(
-                            partyId, BigDecimal.ZERO, InvoiceStatus.CANCELLED);
+                    .findByPartyIdAndDueAmountGreaterThanAndStatusInOrderByDueDateAsc(
+                            partyId, BigDecimal.ZERO, List.of(InvoiceStatus.POSTED, InvoiceStatus.PARTIAL));
 
 
             for (Invoice invoice : dueInvoices) {
@@ -522,9 +540,7 @@ public class PaymentServiceImpl implements PaymentService {
                 if (!invoice.getParty().getId().equals(payment.getParty().getId())) {
                     throw new BusinessRuleException("Allocated invoice does not belong to the selected party");
                 }
-                if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
-                    throw new BusinessRuleException("Cannot allocate payment to a cancelled invoice");
-                }
+                validateInvoiceAllocationStatus(invoice);
                 if (invoice.getDueAmount().compareTo(BigDecimal.ZERO) <= 0) {
                     throw new BusinessRuleException("Invoice due amount must be greater than zero");
                 }
@@ -596,6 +612,8 @@ public class PaymentServiceImpl implements PaymentService {
 
             Invoice invoice = invoiceRepository.findById(allocation.getReferenceId())
                     .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+
+            validateInvoiceAllocationStatus(invoice);
 
             invoice.setPaidAmount(invoice.getPaidAmount().add(allocation.getAllocatedAmount()));
             invoice.setDueAmount(invoice.getGrandTotal().subtract(invoice.getPaidAmount()));
@@ -682,6 +700,12 @@ public class PaymentServiceImpl implements PaymentService {
                     : com.nexaerp.expense.ExpensePaymentStatus.PARTIAL);
 
             expenseRepository.save(exp);
+        }
+    }
+
+    private void validateInvoiceAllocationStatus(Invoice invoice) {
+        if (invoice.getStatus() != InvoiceStatus.POSTED && invoice.getStatus() != InvoiceStatus.PARTIAL) {
+            throw new BusinessRuleException("Payment allocation requires a POSTED or PARTIAL invoice");
         }
     }
 
@@ -834,6 +858,131 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
+    private List<PaymentAllocation> lockAndValidateAllocations(Payment payment) {
+        List<PaymentAllocation> allocations = paymentAllocationRepository.findByPaymentId(payment.getId())
+                .stream()
+                .sorted(Comparator.comparing(PaymentAllocation::getReferenceType)
+                        .thenComparing(PaymentAllocation::getReferenceId))
+                .toList();
+
+        BigDecimal total = allocations.stream()
+                .map(PaymentAllocation::getAllocatedAmount)
+                .reduce(BigDecimal.ZERO, (left, right) -> {
+                    if (right == null || right.compareTo(BigDecimal.ZERO) <= 0) {
+                        throw new BusinessRuleException("Payment contains an invalid allocation amount");
+                    }
+                    return left.add(right);
+                });
+        if (payment.getAllocatedAmount() == null || payment.getUnallocatedAmount() == null
+                || total.compareTo(payment.getAllocatedAmount()) != 0
+                || payment.getAmount().subtract(total).compareTo(payment.getUnallocatedAmount()) != 0) {
+            throw new BusinessRuleException("Payment persisted allocation totals are invalid");
+        }
+
+        Set<String> references = new HashSet<>();
+        for (PaymentAllocation allocation : allocations) {
+            String reference = allocation.getReferenceType() + ":" + allocation.getReferenceId();
+            if (!references.add(reference)) {
+                throw new BusinessRuleException("Payment contains duplicate allocation references");
+            }
+            validateLockedAllocation(payment, allocation);
+        }
+        return allocations;
+    }
+
+    private void validateLockedAllocation(Payment payment, PaymentAllocation allocation) {
+        if (allocation.getReferenceType() == null || allocation.getReferenceId() == null) {
+            throw new BusinessRuleException("Payment contains an invalid allocation reference");
+        }
+        switch (allocation.getReferenceType()) {
+            case INVOICE -> {
+                if (payment.getPaymentType() != PaymentType.RECEIPT) {
+                    throw new BusinessRuleException("Invoice allocation requires a RECEIPT payment");
+                }
+                Invoice invoice = invoiceRepository.findByIdForUpdate(allocation.getReferenceId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+                if (invoice.getParty() == null || !invoice.getParty().getId().equals(payment.getParty().getId())) {
+                    throw new BusinessRuleException("Allocated invoice does not belong to the payment party");
+                }
+                validateInvoiceAllocationStatus(invoice);
+                validateOutstanding(allocation.getAllocatedAmount(), invoice.getDueAmount(), "invoice");
+                validateCurrency(payment.getCurrencyCode(), invoice.getCurrencyCode(), "invoice");
+            }
+            case VENDOR_BILL -> {
+                if (payment.getPaymentType() != PaymentType.PAYMENT) {
+                    throw new BusinessRuleException("Vendor bill allocation requires a PAYMENT payment");
+                }
+                VendorBill bill = vendorBillRepository.findByIdForUpdate(allocation.getReferenceId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Vendor bill not found"));
+                if (bill.getParty() == null || !bill.getParty().getId().equals(payment.getParty().getId())) {
+                    throw new BusinessRuleException("Allocated vendor bill does not belong to the payment party");
+                }
+                if (bill.getStatus() != VendorBillStatus.POSTED && bill.getStatus() != VendorBillStatus.PARTIAL) {
+                    throw new BusinessRuleException("Payment allocation requires a POSTED or PARTIAL vendor bill");
+                }
+                validateOutstanding(allocation.getAllocatedAmount(), bill.getDueAmount(), "vendor bill");
+                validateCurrency(payment.getCurrencyCode(), bill.getCurrencyCode(), "vendor bill");
+            }
+            case EXPENSE -> {
+                if (payment.getPaymentType() != PaymentType.PAYMENT) {
+                    throw new BusinessRuleException("Expense allocation requires a PAYMENT payment");
+                }
+                com.nexaerp.expense.Expense expense = expenseRepository.findByIdForUpdate(allocation.getReferenceId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
+                if (expense.getParty() == null || !expense.getParty().getId().equals(payment.getParty().getId())) {
+                    throw new BusinessRuleException("Allocated expense does not belong to the payment party");
+                }
+                if (expense.getStatus() != com.nexaerp.expense.ExpenseStatus.POSTED) {
+                    throw new BusinessRuleException("Payment allocation requires a POSTED expense");
+                }
+                validateOutstanding(allocation.getAllocatedAmount(), expense.getDueAmount(), "expense");
+            }
+        }
+    }
+
+    private void validateOutstanding(BigDecimal allocated, BigDecimal due, String label) {
+        if (due == null || due.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessRuleException("Allocated " + label + " has no outstanding amount");
+        }
+        if (allocated.compareTo(due) > 0) {
+            throw new BusinessRuleException("Allocation exceeds the outstanding " + label + " amount");
+        }
+    }
+
+    private void validateCurrency(String paymentCurrency, String documentCurrency, String label) {
+        if (paymentCurrency == null || documentCurrency == null
+                || !paymentCurrency.equalsIgnoreCase(documentCurrency)) {
+            throw new BusinessRuleException("Payment currency must match the allocated " + label + " currency");
+        }
+    }
+
+    private BankAccount lockAndValidateBank(Payment payment) {
+        validatePartyForPayment(payment.getPaymentType(), payment.getParty());
+        validatePaymentAccount(payment.getAccount());
+        if (payment.getPaymentMethod() == null) throw new BusinessRuleException("Payment method is required");
+        if (payment.getExchangeRate() == null || payment.getExchangeRate().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessRuleException("Payment exchange rate must be greater than zero");
+        }
+        BankAccount bank = bankAccountRepository.findByCoaAccountIdForUpdate(payment.getAccount().getId())
+                .orElseThrow(() -> new BusinessRuleException(
+                        "No bank account is linked with payment account: " + payment.getAccount().getCode()));
+        if (!Boolean.TRUE.equals(bank.getIsActive())) throw new BusinessRuleException("Linked bank account is inactive");
+        if (payment.getCurrencyCode() == null || bank.getCurrency() == null
+                || !payment.getCurrencyCode().equalsIgnoreCase(bank.getCurrency())) {
+            throw new BusinessRuleException("Payment currency must match the linked bank account currency");
+        }
+        if (payment.getPaymentType() == PaymentType.PAYMENT
+                && balance(bank).compareTo(payment.getAmount()) < 0) {
+            throw new BusinessRuleException("Insufficient balance. Available: " + balance(bank)
+                    + " BDT, required: " + payment.getAmount() + " BDT");
+        }
+        return bank;
+    }
+
+    private BigDecimal balance(BankAccount bank) {
+        return bank.getCurrentBalance() != null ? bank.getCurrentBalance() : BigDecimal.ZERO;
+    }
+
 
     // ---------bank balance update
 
@@ -877,6 +1026,25 @@ public class PaymentServiceImpl implements PaymentService {
         bankAccountRepository.save(bankAccount);
     }
 
+    private void updateLinkedBankBalance(
+            BankAccount bankAccount,
+            BigDecimal amount,
+            PaymentType paymentType,
+            boolean reversal
+    ) {
+        BigDecimal currentBalance = balance(bankAccount);
+        BigDecimal adjustment = paymentType == PaymentType.RECEIPT
+                ? (reversal ? amount.negate() : amount)
+                : (reversal ? amount : amount.negate());
+        BigDecimal newBalance = currentBalance.add(adjustment);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException("Insufficient bank balance. Available: "
+                    + currentBalance + ", required: " + amount);
+        }
+        bankAccount.setCurrentBalance(newBalance);
+        bankAccountRepository.save(bankAccount);
+    }
+
     // sufficient Balance validation
 
     private void validateSufficientPaymentBalance(Payment payment) {
@@ -914,7 +1082,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     // -----------createBankTransactionForPayment----------
-    private void createBankTransactionForPayment(Payment payment) {
+    private void createBankTransactionForPayment(Payment payment, BankAccount bankAccount) {
 
         if (bankTransactionRepository
                 .findByReferenceNumber(payment.getPaymentNumber())
@@ -925,13 +1093,6 @@ public class PaymentServiceImpl implements PaymentService {
                             + payment.getPaymentNumber()
             );
         }
-
-        BankAccount bankAccount = bankAccountRepository
-                .findByCoaAccountId(payment.getAccount().getId())
-                .orElseThrow(() -> new BusinessRuleException(
-                        "No bank account is linked with COA account: "
-                                + payment.getAccount().getCode()
-                ));
 
         BankTransaction transaction = new BankTransaction();
 
@@ -967,8 +1128,15 @@ public class PaymentServiceImpl implements PaymentService {
 
 
     private PaymentResponseDto toResponse(Payment payment) {
+        return toResponse(payment, false);
+    }
+
+    private PaymentResponseDto toResponse(Payment payment, boolean includeApproval) {
         List<PaymentAllocation> allocations =
                 paymentAllocationRepository.findByPaymentId(payment.getId());
+        ApprovalRequest latestApproval = includeApproval
+                ? approvalService.findLatestPaymentRequest(payment.getId())
+                : null;
 
         return PaymentResponseDto.builder()
                 .id(payment.getId())
@@ -991,6 +1159,12 @@ public class PaymentServiceImpl implements PaymentService {
                 .postedAt(payment.getPostedAt())
                 .createdAt(payment.getCreatedAt())
                 .updatedAt(payment.getUpdatedAt())
+                .createdBy(payment.getCreatedBy())
+                .approvalFeatureEnabled(approvalService.isPaymentApprovalEnabled())
+                .latestApprovalId(latestApproval != null ? latestApproval.getId() : null)
+                .activeApprovalId(latestApproval != null && latestApproval.getActiveMarker() != null ? latestApproval.getId() : null)
+                .approvalStatus(latestApproval != null ? latestApproval.getStatus() : null)
+                .approvalConsumed(latestApproval != null ? latestApproval.getConsumedAt() != null : null)
                 .allocations(allocations.stream()
                         .map(this::toAllocationResponse)
                         .collect(Collectors.toList()))

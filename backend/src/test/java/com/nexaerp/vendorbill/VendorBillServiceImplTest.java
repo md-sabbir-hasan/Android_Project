@@ -4,6 +4,7 @@ import com.nexaerp.account.Account;
 import com.nexaerp.account.AccountRepository;
 import com.nexaerp.account.AccountType;
 import com.nexaerp.accountingperiod.AccountingPeriodService;
+import com.nexaerp.approval.ApprovalService;
 import com.nexaerp.audit.AuditLogService;
 import com.nexaerp.budget.BudgetCheckService;
 import com.nexaerp.budget.dto.BudgetWarningDto;
@@ -67,6 +68,7 @@ class VendorBillServiceImplTest {
     @Mock private NotificationService notificationService;
     @Mock private BudgetAlertEmailService budgetAlertEmailService;
     @Mock private CostCenterService costCenterService;
+    @Mock private ApprovalService approvalService;
 
     @InjectMocks private VendorBillServiceImpl service;
 
@@ -78,6 +80,7 @@ class VendorBillServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        when(approvalService.lockAndValidateVendorBillForPosting(any())).thenReturn(null);
         expenseAccount = account(10L, "5100", "Office Expense", AccountType.EXPENSE);
         payableAccount = account(20L, "2100", "Accounts Payable", AccountType.LIABILITY);
         inputVatAccount = account(30L, "1300", "Input VAT", AccountType.ASSET);
@@ -139,8 +142,10 @@ class VendorBillServiceImplTest {
                 postingDate,
                 List.of(warning)
         );
-        verify(notificationService).createForCurrentUser(
+        verify(notificationService).scheduleForCurrentUserAfterCommit(
                 NotificationType.BUDGET_EXCEEDED,
+                com.nexaerp.notification.NotificationPriority.HIGH,
+                com.nexaerp.notification.NotificationModule.BUDGET,
                 "Budget exceeded",
                 "Budget for Office Expense exceeded by 15.00.",
                 "/budget/7/variance",
