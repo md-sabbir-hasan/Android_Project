@@ -14,6 +14,11 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import android.content.Intent;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import com.nexaerp.mobile.feature.notification.NotificationActivity;
+
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.snackbar.Snackbar;
@@ -52,6 +57,8 @@ public class DashboardFragment extends Fragment {
     private static final String ARG_NAME = "name";
     private static final String ARG_ROLES = "roles";
     private static final String ARG_PERMISSIONS = "permissions";
+
+    private ActivityResultLauncher<Intent> notificationLauncher;
 
     private FragmentDashboardBinding binding;
     private DashboardViewModel viewModel;
@@ -114,6 +121,15 @@ public class DashboardFragment extends Fragment {
             @Nullable ViewGroup container,
             @Nullable Bundle savedInstanceState
     ) {
+        notificationLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (viewModel != null) {
+                        viewModel.forceRefreshUnreadCount();
+                    }
+                }
+        );
+
         binding = FragmentDashboardBinding.inflate(inflater, container, false);
         return binding.getRoot();
     }
@@ -138,11 +154,9 @@ public class DashboardFragment extends Fragment {
 
         bindIdentity();
         bindQuickActions();
-        binding.notificationButton.setOnClickListener(ignored -> Snackbar.make(
-                binding.getRoot(),
-                R.string.dashboard_notification_center_coming_next,
-                Snackbar.LENGTH_SHORT
-        ).show());
+        binding.notificationButton.setOnClickListener(ignored -> notificationLauncher.launch(
+                new Intent(requireContext(), NotificationActivity.class)
+        ));
         binding.logoutButton.setOnClickListener(ignored -> requestLogout());
         binding.swipeRefresh.setOnRefreshListener(viewModel::refreshDashboard);
         binding.retryButton.setOnClickListener(ignored -> viewModel.retry());

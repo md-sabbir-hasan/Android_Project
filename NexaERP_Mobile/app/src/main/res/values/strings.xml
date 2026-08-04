@@ -65,4 +65,12 @@
     </plurals>
     <string name="splash_restoring_session">Restoring your session</string>
     <string name="splash_go_to_login">Go to Login</string>
+
+    <string name="notification_title">Notifications</string>
+    <string name="notification_back">Back</string>
+    <string name="notification_unread_only">Unread only</string>
+    <string name="notification_mark_all_read">Mark all read</string>
+    <string name="notification_loading">Loading notifications</string>
+    <string name="notification_retry">Retry</string>
+    <string name="notification_empty">You\'re all caught up. No notifications to show.</string>
 </resources>

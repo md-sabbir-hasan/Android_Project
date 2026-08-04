@@ -59,6 +59,11 @@ public class DashboardViewModel extends ViewModel {
         requestUnreadCount(false);
     }
 
+    /** Used after returning from the Notification Center, where the count may have changed. */
+    public void forceRefreshUnreadCount() {
+        requestUnreadCount(true);
+    }
+
     private void request(boolean refresh) {
         requestInFlight = true;
         DashboardUiState current = state.getValue();
