@@ -18,6 +18,7 @@ import android.content.Intent;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import com.nexaerp.mobile.feature.notification.NotificationActivity;
+import com.nexaerp.mobile.feature.role.RoleListActivity;
 
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.chip.Chip;
@@ -218,16 +219,24 @@ public class DashboardFragment extends Fragment {
             chip.setText(action.getLabel());
             chip.setClickable(true);
             chip.setCheckable(false);
-            chip.setOnClickListener(view -> Snackbar.make(
-                    binding.getRoot(),
-                    R.string.dashboard_feature_coming_next,
-                    Snackbar.LENGTH_SHORT
-            ).show());
+            chip.setOnClickListener(view -> handleQuickAction(action.getRoute()));
             binding.quickActions.addView(chip);
         }
         binding.quickActionsSection.setVisibility(
                 binding.quickActions.getChildCount() == 0 ? View.GONE : View.VISIBLE
         );
+    }
+
+    private void handleQuickAction(String route) {
+        if (QuickActionProvider.ROUTE_MANAGE_ROLES.equals(route)) {
+            startActivity(RoleListActivity.newIntent(requireActivity()));
+            return;
+        }
+        Snackbar.make(
+                binding.getRoot(),
+                R.string.dashboard_feature_coming_next,
+                Snackbar.LENGTH_SHORT
+        ).show();
     }
 
     private void render(DashboardUiState state) {

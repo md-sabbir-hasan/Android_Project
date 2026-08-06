@@ -43,6 +43,23 @@
 
         </activity>
 
+
+        <activity
+            android:name=".feature.role.RoleListActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".feature.role.RoleDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.role.RoleListActivity" />
+
+        <activity
+            android:name=".feature.role.RoleEditActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.role.RoleListActivity"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>

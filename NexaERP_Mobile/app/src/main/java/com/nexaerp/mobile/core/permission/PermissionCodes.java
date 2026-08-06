@@ -8,5 +8,8 @@ public final class PermissionCodes {
     public static final String CREATE_VENDOR_BILL = "CREATE_VENDOR_BILL";
     public static final String VIEW_AUDIT_LOGS = "VIEW_AUDIT_LOGS";
 
+    public static final String MANAGE_USERS = "MANAGE_USERS";
+    public static final String MANAGE_ROLES = "MANAGE_ROLES";
+
     private PermissionCodes() {}
 }

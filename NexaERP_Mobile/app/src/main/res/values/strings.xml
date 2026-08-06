@@ -73,4 +73,23 @@
     <string name="notification_loading">Loading notifications</string>
     <string name="notification_retry">Retry</string>
     <string name="notification_empty">You\'re all caught up. No notifications to show.</string>
+
+
+    <string name="role_list_title">Roles</string>
+    <string name="role_detail_title">Role</string>
+    <string name="role_create_title">New Role</string>
+    <string name="role_edit_title">Edit Role</string>
+    <string name="role_search_hint">Search roles</string>
+    <string name="role_empty">No roles found.</string>
+    <string name="role_unnamed">Unnamed role</string>
+    <string name="role_meta_summary">%1$d permissions · %2$d users</string>
+    <string name="role_no_permissions">No permissions assigned.</string>
+    <string name="role_module_general">General</string>
+    <string name="role_permissions_heading">Permissions</string>
+    <string name="role_name_hint">Role name</string>
+    <string name="role_description_hint">Description (optional)</string>
+    <string name="role_save">Save</string>
+    <string name="role_saving">Saving…</string>
+    <string name="role_new">New role</string>
+    <string name="role_edit">Edit</string>
 </resources>
