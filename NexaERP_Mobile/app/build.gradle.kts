@@ -25,7 +25,8 @@ android {
         buildConfigField(
             "String",
             "BASE_URL",
-            "\"http://10.0.2.2:8085/\""
+//            "\"http://10.0.2.2:8085/\""
+            "\"http://192.168.0.3:8085/\""
         )
     }
 
