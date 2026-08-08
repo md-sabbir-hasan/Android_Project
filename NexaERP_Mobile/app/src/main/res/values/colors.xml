@@ -2,4 +2,28 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- User status pill colors -->
+    <color name="status_active_bg">#E3F5E9</color>
+    <color name="status_active_fg">#1E7D42</color>
+    <color name="status_inactive_bg">#EEEEEE</color>
+    <color name="status_inactive_fg">#5F5F5F</color>
+    <color name="status_locked_bg">#FBE4E4</color>
+    <color name="status_locked_fg">#B3261E</color>
+    <color name="status_pending_bg">#FFF3DE</color>
+    <color name="status_pending_fg">#8A5A00</color>
+
+    <!-- Deterministic avatar palette -->
+    <color name="avatar_bg_1">#D6E4FF</color>
+    <color name="avatar_fg_1">#1B3F8B</color>
+    <color name="avatar_bg_2">#E0D6FF</color>
+    <color name="avatar_fg_2">#4B2E93</color>
+    <color name="avatar_bg_3">#FFE0DC</color>
+    <color name="avatar_fg_3">#9A3B2F</color>
+    <color name="avatar_bg_4">#D9F2E6</color>
+    <color name="avatar_fg_4">#1E6E4A</color>
+    <color name="avatar_bg_5">#FFEBCF</color>
+    <color name="avatar_fg_5">#8A5A00</color>
+    <color name="avatar_bg_6">#DDF0F5</color>
+    <color name="avatar_fg_6">#1D6C7D</color>
 </resources>

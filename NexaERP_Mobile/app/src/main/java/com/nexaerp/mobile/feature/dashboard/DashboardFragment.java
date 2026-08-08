@@ -37,6 +37,7 @@ import com.nexaerp.mobile.data.remote.model.dashboard.RecentActivityResponse;
 import com.nexaerp.mobile.data.repository.DashboardRepository;
 import com.nexaerp.mobile.data.repository.NotificationRepository;
 import com.nexaerp.mobile.databinding.FragmentDashboardBinding;
+import com.nexaerp.mobile.feature.user.UserListActivity;
 
 import java.math.BigDecimal;
 import java.text.DateFormat;
@@ -230,6 +231,10 @@ public class DashboardFragment extends Fragment {
     private void handleQuickAction(String route) {
         if (QuickActionProvider.ROUTE_MANAGE_ROLES.equals(route)) {
             startActivity(RoleListActivity.newIntent(requireActivity()));
+            return;
+        }
+        if (QuickActionProvider.ROUTE_MANAGE_USERS.equals(route)) {
+            startActivity(UserListActivity.newIntent(requireActivity()));
             return;
         }
         Snackbar.make(

@@ -92,4 +92,32 @@
     <string name="role_saving">Saving…</string>
     <string name="role_new">New role</string>
     <string name="role_edit">Edit</string>
+
+    <string name="user_list_title">Users</string>
+    <string name="user_detail_title">User</string>
+    <string name="user_create_title">New User</string>
+    <string name="user_edit_title">Edit User</string>
+    <string name="user_search_hint">Search users</string>
+    <string name="user_filter_all">All</string>
+    <string name="user_status_active">Active</string>
+    <string name="user_status_inactive">Inactive</string>
+    <string name="user_status_locked">Locked</string>
+    <string name="user_status_pending">Pending</string>
+    <string name="user_status_unknown">Unknown</string>
+    <string name="user_empty">No users found.</string>
+    <string name="user_unnamed">Unnamed user</string>
+    <string name="user_no_roles">No roles assigned.</string>
+    <string name="user_never">Never</string>
+    <string name="user_activity_heading">Activity</string>
+    <string name="user_last_login_label">Last login</string>
+    <string name="user_created_label">Created</string>
+    <string name="user_failed_attempts_label">Failed login attempts</string>
+    <string name="user_roles_heading">Roles</string>
+    <string name="user_activate">Activate</string>
+    <string name="user_deactivate">Deactivate</string>
+    <string name="user_new">New user</string>
+    <string name="user_name_hint">Full name</string>
+    <string name="user_email_hint">Email</string>
+    <string name="user_email_locked_hint">Email can\'t be changed after the account is created.</string>
+    <string name="notification_time_unavailable">Time unavailable</string>
 </resources>

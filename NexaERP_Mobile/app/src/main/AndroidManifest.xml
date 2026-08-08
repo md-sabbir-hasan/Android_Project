@@ -60,6 +60,25 @@
             android:parentActivityName=".feature.role.RoleListActivity"
             android:windowSoftInputMode="adjustResize" />
 
+
+
+
+        <activity
+            android:name=".feature.user.UserListActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".feature.user.UserDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.user.UserListActivity" />
+
+        <activity
+            android:name=".feature.user.UserEditActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.user.UserListActivity"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>
