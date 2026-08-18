@@ -17,6 +17,8 @@ import androidx.lifecycle.ViewModelProvider;
 import android.content.Intent;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+
+import com.nexaerp.mobile.feature.expense.ExpenseListActivity;
 import com.nexaerp.mobile.feature.notification.NotificationActivity;
 import com.nexaerp.mobile.feature.role.RoleListActivity;
 
@@ -235,6 +237,10 @@ public class DashboardFragment extends Fragment {
         }
         if (QuickActionProvider.ROUTE_MANAGE_USERS.equals(route)) {
             startActivity(UserListActivity.newIntent(requireActivity()));
+            return;
+        }
+        if (QuickActionProvider.ROUTE_NEW_EXPENSE.equals(route)) {
+            startActivity(ExpenseListActivity.newIntent(requireActivity()));
             return;
         }
         Snackbar.make(

@@ -79,6 +79,27 @@
             android:parentActivityName=".feature.user.UserListActivity"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".feature.common.PickerActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".feature.expense.ExpenseListActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".feature.expense.ExpenseDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.expense.ExpenseListActivity" />
+
+        <activity
+            android:name=".feature.expense.ExpenseCreateActivity"
+            android:exported="false"
+            android:parentActivityName=".feature.expense.ExpenseListActivity"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>

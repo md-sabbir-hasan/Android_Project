@@ -120,4 +120,47 @@
     <string name="user_email_hint">Email</string>
     <string name="user_email_locked_hint">Email can\'t be changed after the account is created.</string>
     <string name="notification_time_unavailable">Time unavailable</string>
+    <string name="expense_list_title">Expenses</string>
+    <string name="expense_detail_title">Expense</string>
+    <string name="expense_search_hint">Search expenses</string>
+    <string name="expense_status_draft">Draft</string>
+    <string name="expense_status_posted">Posted</string>
+    <string name="expense_status_cancelled">Cancelled</string>
+    <string name="expense_payment_paid">Paid</string>
+    <string name="expense_payment_partial">Partial</string>
+    <string name="expense_payment_unpaid">Unpaid</string>
+    <string name="expense_empty">No expenses found.</string>
+    <string name="expense_new">New expense</string>
+    <string name="expense_unnamed_account">Unnamed account</string>
+    <string name="expense_budget_warning_heading">Budget warning</string>
+    <string name="expense_details_heading">Details</string>
+    <string name="expense_row_date">Date</string>
+    <string name="expense_row_account">Expense account</string>
+    <string name="expense_row_cost_center">Cost center</string>
+    <string name="expense_row_payment_method">Payment</string>
+    <string name="expense_row_party">Party</string>
+    <string name="expense_row_reference">Reference</string>
+    <string name="expense_row_notes">Notes</string>
+    <string name="expense_none">—</string>
+    <string name="expense_paid_now_with">Paid now via %1$s</string>
+    <string name="expense_pay_later">Pay later</string>
+    <string name="expense_cancelled_reason_prefix">Cancelled:</string>
+    <string name="expense_post">Post</string>
+    <string name="expense_post_confirm_message">Post this expense? Posted expenses can\'t be edited.</string>
+    <string name="expense_cancel">Cancel expense</string>
+    <string name="expense_cancel_reason_hint">Reason for cancelling</string>
+    <string name="expense_cancel_reason_required">A cancel reason is required.</string>
+
+    <string name="picker_search_hint">Search</string>
+    <string name="picker_empty">No results found.</string>
+
+    <string name="expense_create_title">New Expense</string>
+    <string name="expense_amount_hint">Amount</string>
+    <string name="expense_payment_heading">Payment</string>
+    <string name="expense_pay_now">Pay now</string>
+    <string name="expense_reference_hint">Reference number (optional)</string>
+    <string name="expense_notes_hint">Notes (optional)</string>
+    <string name="expense_save">Save expense</string>
+    <string name="expense_tap_to_select">Tap to select</string>
+    <string name="expense_optional_tap_to_select">Optional — tap to select</string>
 </resources>

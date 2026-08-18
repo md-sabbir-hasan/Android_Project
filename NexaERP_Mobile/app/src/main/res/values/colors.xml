@@ -26,4 +26,33 @@
     <color name="avatar_fg_5">#8A5A00</color>
     <color name="avatar_bg_6">#DDF0F5</color>
     <color name="avatar_fg_6">#1D6C7D</color>
+
+    <!-- Expense status colors -->
+    <color name="expense_draft_bg">#E3EAFD</color>
+    <color name="expense_draft_fg">#2848A3</color>
+    <color name="expense_posted_bg">#E3F5E9</color>
+    <color name="expense_posted_fg">#1E7D42</color>
+    <color name="expense_cancelled_bg">#FBE4E4</color>
+    <color name="expense_cancelled_fg">#B3261E</color>
+
+    <!-- Expense payment status colors -->
+    <color name="payment_unpaid_bg">#FDE7E0</color>
+    <color name="payment_unpaid_fg">#B24A1E</color>
+    <color name="payment_partial_bg">#FFF3DE</color>
+    <color name="payment_partial_fg">#8A5A00</color>
+    <color name="payment_paid_bg">#E3F5E9</color>
+    <color name="payment_paid_fg">#1E7D42</color>
+
+    <!-- Budget warning banner -->
+    <color name="warning_banner_bg">#FFF3DE</color>
+    <color name="warning_banner_fg">#8A5A00</color>
+    <color name="warning_banner_border">#F0C674</color>
+
+    <!-- Expense accent colors (category-style, used for icon bubbles / accent bar) -->
+    <color name="accent_1">#6C5CE7</color>
+    <color name="accent_2">#00B894</color>
+    <color name="accent_3">#E17055</color>
+    <color name="accent_4">#0984E3</color>
+    <color name="accent_5">#FDCB6E</color>
+    <color name="accent_6">#E84393</color>
 </resources>
